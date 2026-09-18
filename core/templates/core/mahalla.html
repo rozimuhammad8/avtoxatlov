@@ -1,0 +1,109 @@
+{% extends "core/base.html" %}
+{% load static %}
+{% block title %}{{ mahalla.name }}{% endblock %}
+{% block bartitle %}{{ mahalla.name }}{% endblock %}
+{% block content %}
+<div class="page"
+     data-pk="{{ mahalla.pk }}"
+     data-static='{{ static_json }}'
+     data-family-static='{{ family_static_json }}'
+     data-selected='{{ selected_json }}'
+     data-urls='{"streets":"{% url 'fetch_streets' mahalla.pk %}","start":"{% url 'start_fill' mahalla.pk %}","stop":"{% url 'stop_fill' mahalla.pk %}","status":"{% url 'fill_status' mahalla.pk %}"}'>
+
+  <!-- Tokenlar -->
+  <section class="card">
+    <div class="card-head"><h2>Bearer tokenlar</h2></div>
+    <form method="post" action="{% url 'save_token' mahalla.pk %}" class="form">
+      {% csrf_token %}
+      <label>online-mahalla.uz token
+        <input name="token" value="{{ mahalla.token }}" placeholder="Bearer token...">
+      </label>
+      <label>sr.ihma.uz token (oila tarkibi uchun)
+        <input name="ihma_token" value="{{ mahalla.ihma_token }}" placeholder="ihma Bearer token...">
+      </label>
+      <button class="btn" type="submit">Saqlash</button>
+    </form>
+  </section>
+
+  <!-- Baza -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Baza</h2>
+      <span class="badge {% if record_count %}ok{% endif %}">{{ record_count }} yozuv</span>
+    </div>
+    {% if record_count %}
+      <p class="muted">Baza mavjud. Yangilash uchun boshqa Excel yuklashingiz mumkin.</p>
+    {% else %}
+      <p class="muted">Baza yo'q — Excel (royxat.xlsx) yuklang: kadastr, pinfl ustunlaridan olinadi.</p>
+    {% endif %}
+    <form method="post" action="{% url 'upload_excel' mahalla.pk %}" enctype="multipart/form-data" class="inline-form">
+      {% csrf_token %}
+      <input type="file" name="file" accept=".xlsx" required>
+      <button class="btn" type="submit">Yuklash</button>
+    </form>
+  </section>
+
+  <!-- Ko'chalar -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Ko'chalar</h2>
+      <button class="btn" id="btn-streets">Ko'chalarni olish</button>
+    </div>
+    <div id="streets" class="chips"><p class="muted">Ko'chalarni olish tugmasini bosing.</p></div>
+  </section>
+
+  <!-- Bo'limlar -->
+  <section class="card">
+    <div class="card-head"><h2>Bo'lim</h2></div>
+    <div class="segmented">
+      <button class="seg active" data-sec="citizen">A) Fuqaro ma'lumotlari</button>
+      <button class="seg" data-sec="family">B) Oila a'zolari</button>
+    </div>
+
+    <!-- A) Fuqaro -->
+    <div class="section" data-sec="citizen">
+      <h3>Static maydonlar</h3>
+      <p class="muted">Boshlashdan oldin bir marta. O'zgartirmasangiz shu qiymatlar ishlatiladi.</p>
+      <div class="row-4 sf"></div>
+      <div class="controls">
+        <button class="btn primary bt-start">Boshlash</button>
+        <button class="btn danger bt-stop" disabled>To'xtatish</button>
+        <span class="status-pill st-pill">idle</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="n" data-k="total">0</span><span class="l">Jami</span></div>
+        <div class="stat"><span class="n ok" data-k="sent">0</span><span class="l">Yuborildi</span></div>
+        <div class="stat"><span class="n" data-k="skipped">0</span><span class="l">O'tkazildi</span></div>
+        <div class="stat"><span class="n bad" data-k="failed">0</span><span class="l">Xatolik</span></div>
+      </div>
+      <h3>Loglar</h3>
+      <pre class="logs lg"></pre>
+    </div>
+
+    <!-- B) Oila a'zolari -->
+    <div class="section" data-sec="family" hidden>
+      <p class="muted">Mavjud a'zolar 1 tadan ko'p bo'lgan uylar avtomatik o'tkazib yuboriladi.
+        <b>study_level_id</b> va <b>phone</b> bo'sh qoldirilsa null yuboriladi (uydirma yo'q).</p>
+      <h3>Static maydonlar</h3>
+      <div class="row-4 sf"></div>
+      <div class="controls">
+        <button class="btn primary bt-start">Boshlash</button>
+        <button class="btn danger bt-stop" disabled>To'xtatish</button>
+        <span class="status-pill st-pill">idle</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="n" data-k="homes">0</span><span class="l">Uylar</span></div>
+        <div class="stat"><span class="n ok" data-k="members">0</span><span class="l">A'zolar</span></div>
+        <div class="stat"><span class="n" data-k="skipped">0</span><span class="l">O'tkazildi</span></div>
+        <div class="stat"><span class="n bad" data-k="failed">0</span><span class="l">Xatolik</span></div>
+      </div>
+      <h3>Loglar</h3>
+      <pre class="logs lg"></pre>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'core/js/app.js' %}"></script>
+{% endblock %}

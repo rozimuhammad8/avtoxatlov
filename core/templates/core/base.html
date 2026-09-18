@@ -1,0 +1,30 @@
+{% load static %}
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf" content="{{ csrf_token }}">
+  <title>{% block title %}Mahalla tizimi{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'core/css/app.css' %}">
+</head>
+<body>
+  <div class="titlebar">
+    <div class="traffic"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <div class="titlebar-title">{% block bartitle %}Mahalla tizimi{% endblock %}</div>
+    <a class="titlebar-home" href="{% url 'home' %}">Mahallalar</a>
+  </div>
+
+  {% if messages %}
+    <div class="toasts">
+      {% for m in messages %}<div class="toast {{ m.tags }}">{{ m }}</div>{% endfor %}
+    </div>
+  {% endif %}
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

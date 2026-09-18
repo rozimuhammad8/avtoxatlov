@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}
+{% block title %}Mahallalar{% endblock %}
+{% block content %}
+<div class="grid-2">
+  <section class="card">
+    <h2>Mahallalar</h2>
+    {% if mahallas %}
+      <div class="list">
+        {% for m in mahallas %}
+          <a class="list-row" href="{% url 'mahalla_detail' m.pk %}">
+            <div>
+              <div class="list-title">{{ m.name }}</div>
+              <div class="list-sub">obl {{ m.obl_id }} · area {{ m.area_id }} · district {{ m.district_id }}</div>
+            </div>
+            <div class="badge">{{ m.record_count }} yozuv</div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">Hali mahalla yo'q. O'ngdan qo'shing.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Yangi mahalla</h2>
+    <form method="post" action="{% url 'mahalla_create' %}" class="form">
+      {% csrf_token %}
+      <label>Nomi<input name="name" required placeholder="Masalan: Sanoat MFY"></label>
+      <div class="row-3">
+        <label>obl_id<input name="obl_id" type="number" value="3" required></label>
+        <label>area_id<input name="area_id" type="number" value="307" required></label>
+        <label>district_id<input name="district_id" type="number" value="307032" required></label>
+      </div>
+      <label>Bearer token (ixtiyoriy)<input name="token" placeholder="keyin ham qo'shsa bo'ladi"></label>
+      <button class="btn primary" type="submit">Qo'shish</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
