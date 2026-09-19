@@ -27,6 +27,20 @@ def _iso_survey_date(static):
     return date.today().isoformat()
 
 
+def target_street_ids(street):
+    """'Noma'lum' (id 0) ko'cha uchun foydalanuvchi tanlagan ko'chalar id'lari.
+
+    Kod o'zi ko'cha tanlamaydi — ro'yxat UI da tanlanib, job.streets ichida
+    {"id": 0, ..., "targets": [{"id": .., "name": ..}, ...]} ko'rinishida keladi.
+    """
+    ids = []
+    for t in street.get("targets") or []:
+        tid = t.get("id") if isinstance(t, dict) else t
+        if tid:  # None ham, 0 ham emas
+            ids.append(tid)
+    return ids
+
+
 def run_citizen_fill(job_id, stop_event):
     close_old_connections()
     job = FillJob.objects.get(id=job_id)
@@ -64,24 +78,6 @@ def run_citizen_fill(job_id, stop_event):
         return stop_event.is_set() or \
             FillJob.objects.filter(id=job_id).values_list("status", flat=True).first() == "stopping"
 
-    # "номаълум" ko'cha (id 0) uchun haqiqiy ko'chalar ro'yxati (nolga teng bo'lmagan id'lar).
-    # Har bir noma'lum uy NAVBAT bilan (round-robin) shu ko'chalarga taqsimlanadi:
-    # 1-uy -> 1-ko'cha, 2-uy -> 2-ko'cha ... tugasa yana 1-ko'chага qaytadi.
-    _known = {"ids": None}
-
-    def known_street_ids():
-        if _known["ids"] is None:
-            ids = []
-            try:
-                for s in api.streets(mahalla):
-                    sid_ = s.get("id")
-                    if sid_:  # None ham, 0 ham emas
-                        ids.append(sid_)
-            except Exception:  # noqa: BLE001
-                pass
-            _known["ids"] = ids
-        return _known["ids"]
-
     log(f"=== Boshlandi: {mahalla.name} | ko'chalar: {len(job.streets)} ===")
     persist(status="running")
 
@@ -93,15 +89,16 @@ def run_citizen_fill(job_id, stop_event):
             sname = street.get("name", sid)
             log(f"--- Ko'cha: {sname} ---")
 
-            # "номаълум" (id 0) — har bir uy navbat bilan haqiqiy ko'chага (round-robin)
+            # "номаълум" (id 0) — uylar FOYDALANUVCHI tanlagan ko'chalarga navbat bilan
             is_unknown = str(sid) == "0"
             uk_counter = 0
-            known_ids = known_street_ids() if is_unknown else []
+            known_ids = target_street_ids(street) if is_unknown else []
             if is_unknown:
                 if not known_ids:
-                    log(f"  '{sname}' o'tkazildi: haqiqiy ko'chalar topilmadi")
+                    log(f"  '{sname}' o'tkazildi: taqsimlash uchun ko'cha tanlanmagan")
                     continue
-                log(f"  '{sname}' -> {len(known_ids)} ta ko'chага navbat bilan taqsimlanadi")
+                log(f"  '{sname}' -> tanlangan {len(known_ids)} ta ko'chага "
+                    f"navbat bilan taqsimlanadi")
 
             try:
                 homes = api.iter_homes(mahalla, sid, stop_event=stop_event)

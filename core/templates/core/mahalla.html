@@ -1,5 +1,4 @@
 {% extends "core/base.html" %}
-{% load static %}
 {% block title %}{{ mahalla.name }}{% endblock %}
 {% block bartitle %}{{ mahalla.name }}{% endblock %}
 {% block content %}
@@ -50,6 +49,7 @@
       <button class="btn" id="btn-streets">Ko'chalarni olish</button>
     </div>
     <div id="streets" class="chips"><p class="muted">Ko'chalarni olish tugmasini bosing.</p></div>
+    <p id="unknown-note" class="muted note" hidden></p>
   </section>
 
   <!-- Bo'limlar -->
@@ -105,5 +105,269 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'core/js/app.js' %}"></script>
+<script>
+(function () {
+  const page = document.querySelector(".page");
+  if (!page) return;
+
+  const urls = JSON.parse(page.dataset.urls);
+  const staticCitizen = JSON.parse(page.dataset.static || "{}");
+  const staticFamily = JSON.parse(page.dataset.familyStatic || "{}");
+  const selectedInit = JSON.parse(page.dataset.selected || "[]");
+  const csrf = document.querySelector('meta[name="csrf"]').content;
+
+  const $ = (s, r = document) => r.querySelector(s);
+  const streetsBox = $("#streets");
+  const unknownNote = $("#unknown-note");
+  const esc = (v) => String(v ?? "").replace(/[&<>"]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const isUnknown = (id) => String(id) === "0";
+
+  const labels = {
+    mobile_phone: "Telefon", survey_date: "So'rov sanasi (bo'sh=bugun)",
+    property_type: "property_type", home_type: "home_type", ownership: "ownership",
+    home_registered: "home_registered", study_level_id: "study_level_id (bo'sh=null)",
+    home_num: "home_num", document_type: "document_type", phone: "phone (bo'sh=null)",
+  };
+
+  // ko'cha tanlovi — ikkala bo'lim uchun UMUMIY
+  let selectedStreets = Array.isArray(selectedInit) ? selectedInit.slice() : [];
+  let allStreets = [];
+  const isSelected = (id) => selectedStreets.some((x) => String(x.id) === String(id));
+  const unknownSelected = () => selectedStreets.find((x) => isUnknown(x.id));
+
+  // --- "Noma'lum" (id 0) ko'cha: qaysi ko'chalarga taqsimlansin? ---
+  // Kod o'zi hamma ko'chani olmaydi — foydalanuvchidan so'raydi.
+  function askTargets(street, current) {
+    return new Promise((resolve) => {
+      const options = allStreets.filter((s) => !isUnknown(s.id));
+      if (!options.length) {
+        alert("Taqsimlash uchun ko'cha yo'q - avval «Ko'chalarni olish» tugmasini bosing.");
+        resolve(null);
+        return;
+      }
+      const chosen = new Set((current || []).map((t) => String(t.id)));
+
+      const back = document.createElement("div");
+      back.className = "modal-back";
+      back.innerHTML = `
+        <div class="modal">
+          <h2>${esc(street.name)} — qaysi ko'chalarga taqsimlansin?</h2>
+          <p class="muted">Bu ko'chadagi uylar tanlangan ko'chalarga navbat bilan
+            (1-uy → 1-ko'cha, 2-uy → 2-ko'cha ...) taqsimlanadi.</p>
+          <div class="modal-tools">
+            <button class="btn" data-act="all">Hammasi</button>
+            <button class="btn" data-act="none">Tozalash</button>
+            <span class="badge m-count"></span>
+          </div>
+          <div class="modal-list">${options.map((s) => `
+            <label class="modal-row">
+              <input type="checkbox" value="${esc(s.id)}" ${chosen.has(String(s.id)) ? "checked" : ""}>
+              <span>${esc(s.name)}</span>
+            </label>`).join("")}</div>
+          <div class="modal-foot">
+            <button class="btn" data-act="cancel">Bekor qilish</button>
+            <button class="btn primary" data-act="ok">Tasdiqlash</button>
+          </div>
+        </div>`;
+
+      const boxes = () => Array.from(back.querySelectorAll(".modal-list input"));
+      const counter = back.querySelector(".m-count");
+      const okBtn = back.querySelector('[data-act="ok"]');
+      const refresh = () => {
+        const n = boxes().filter((b) => b.checked).length;
+        counter.textContent = `${n} ta tanlandi`;
+        okBtn.disabled = !n;
+      };
+      const close = (val) => {
+        document.removeEventListener("keydown", onKey);
+        back.remove();
+        resolve(val);
+      };
+      const onKey = (e) => { if (e.key === "Escape") close(null); };
+
+      back.addEventListener("change", refresh);
+      back.addEventListener("click", (e) => {
+        const act = e.target.dataset ? e.target.dataset.act : null;
+        if (e.target === back || act === "cancel") return close(null);
+        if (act === "all") { boxes().forEach((b) => (b.checked = true)); return refresh(); }
+        if (act === "none") { boxes().forEach((b) => (b.checked = false)); return refresh(); }
+        if (act === "ok") {
+          // tartib ro'yxatdagidek - taqsimlash ham shu ketma-ketlikda ketadi
+          const picked = boxes().filter((b) => b.checked).map((b) => b.value);
+          close(options.filter((s) => picked.includes(String(s.id)))
+                       .map((s) => ({ id: s.id, name: s.name })));
+        }
+      });
+      document.addEventListener("keydown", onKey);
+      document.body.appendChild(back);
+      refresh();
+    });
+  }
+
+  function renderUnknownNote() {
+    if (!unknownNote) return;
+    const u = unknownSelected();
+    if (!u) { unknownNote.hidden = true; unknownNote.innerHTML = ""; return; }
+    const t = u.targets || [];
+    unknownNote.hidden = false;
+    unknownNote.innerHTML = t.length
+      ? `«${esc(u.name)}» uylari <b>${t.length}</b> ta ko'chaga navbat bilan
+         taqsimlanadi: ${esc(t.map((x) => x.name).join(", "))}
+         <a href="#" data-act="edit-targets">O'zgartirish</a>`
+      : `«${esc(u.name)}» uchun ko'chalar hali tanlanmagan.
+         <a href="#" data-act="edit-targets">Tanlash</a>`;
+  }
+
+  async function toggleUnknown(chip, s) {
+    if (isSelected(s.id)) {                    // tanlangan edi -> olib tashlaymiz
+      selectedStreets = selectedStreets.filter((x) => !isUnknown(x.id));
+      chip.classList.remove("on");
+    } else {
+      const targets = await askTargets(s, []);
+      if (!targets || !targets.length) return;  // bekor qilindi -> tanlanmaydi
+      selectedStreets.push({ id: s.id, name: s.name, targets });
+      chip.classList.add("on");
+    }
+    renderUnknownNote();
+  }
+
+  if (unknownNote) {
+    unknownNote.addEventListener("click", async (e) => {
+      if (!e.target.dataset || e.target.dataset.act !== "edit-targets") return;
+      e.preventDefault();
+      const u = unknownSelected();
+      if (!u) return;
+      const targets = await askTargets(u, u.targets || []);
+      if (targets && targets.length) { u.targets = targets; renderUnknownNote(); }
+    });
+  }
+
+  function renderStreets(list) {
+    allStreets = list.slice();
+    streetsBox.innerHTML = "";
+    if (!list.length) { streetsBox.innerHTML = '<p class="muted">Ko\'cha yo\'q.</p>'; return; }
+    list.forEach((s) => {
+      const chip = document.createElement("div");
+      chip.className = "chip" + (isSelected(s.id) ? " on" : "");
+      const meta = s.homes != null ? ` <small>${s.surveyed ?? 0}/${s.homes}</small>` : "";
+      chip.innerHTML = `${esc(s.name)}${meta}`;
+      chip.addEventListener("click", () => {
+        if (isUnknown(s.id)) { toggleUnknown(chip, s); return; }
+        chip.classList.toggle("on");
+        if (chip.classList.contains("on")) selectedStreets.push({ id: s.id, name: s.name });
+        else selectedStreets = selectedStreets.filter((x) => String(x.id) !== String(s.id));
+      });
+      streetsBox.appendChild(chip);
+    });
+    renderUnknownNote();
+  }
+
+  async function loadStreets() {
+    streetsBox.innerHTML = '<p class="muted">Yuklanmoqda...</p>';
+    try {
+      const r = await fetch(urls.streets);
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "xato");
+      renderStreets(d.streets);
+    } catch (e) {
+      if (selectedStreets.length) renderStreets(selectedStreets);
+      else streetsBox.innerHTML = `<p class="muted">Xatolik: ${e.message}</p>`;
+    }
+  }
+  $("#btn-streets").addEventListener("click", loadStreets);
+  if (selectedStreets.length) loadStreets();
+
+  // --- segmented (A/B) ---
+  document.querySelectorAll(".seg").forEach((seg) => {
+    seg.addEventListener("click", () => {
+      if (seg.disabled) return;
+      document.querySelectorAll(".seg").forEach((s) => s.classList.remove("active"));
+      seg.classList.add("active");
+      document.querySelectorAll(".section[data-sec]").forEach((el) => {
+        el.hidden = el.dataset.sec !== seg.dataset.sec;
+      });
+    });
+  });
+
+  // --- har bir bo'lim boshqaruvi ---
+  function setupSection(secEl, sectionName, staticDefaults) {
+    const sf = secEl.querySelector(".sf");
+    const startBtn = secEl.querySelector(".bt-start");
+    const stopBtn = secEl.querySelector(".bt-stop");
+    const pill = secEl.querySelector(".st-pill");
+    const logsEl = secEl.querySelector(".lg");
+
+    Object.keys(staticDefaults).forEach((k) => {
+      const w = document.createElement("label");
+      w.style.fontSize = "12px"; w.style.color = "var(--muted)";
+      w.innerHTML = `${labels[k] || k}<input data-sf="${k}" value="${staticDefaults[k] ?? ""}">`;
+      sf.appendChild(w);
+    });
+    const readStatic = () => {
+      const o = {};
+      sf.querySelectorAll("input[data-sf]").forEach((i) => (o[i.dataset.sf] = i.value));
+      return o;
+    };
+
+    startBtn.addEventListener("click", async () => {
+      if (!selectedStreets.length) { alert("Kamida bitta ko'cha tanlang."); return; }
+      const u = unknownSelected();
+      if (sectionName === "citizen" && u && !(u.targets || []).length) {
+        const targets = await askTargets(u, []);
+        if (!targets || !targets.length) return;   // tanlanmasa - boshlamaymiz
+        u.targets = targets;
+        renderUnknownNote();
+      }
+      startBtn.disabled = true;
+      try {
+        const r = await fetch(urls.start, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+          body: JSON.stringify({ section: sectionName, streets: selectedStreets, static: readStatic() }),
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || "xato");
+      } catch (e) {
+        alert("Boshlashda xatolik: " + e.message);
+        startBtn.disabled = false;
+      }
+    });
+
+    stopBtn.addEventListener("click", async () => {
+      stopBtn.disabled = true;
+      await fetch(urls.stop + "?section=" + sectionName, {
+        method: "POST", headers: { "X-CSRFToken": csrf },
+      });
+    });
+
+    function apply(d) {
+      const running = d.status === "running" || d.status === "stopping" || d.running;
+      pill.textContent = d.status;
+      pill.className = "status-pill " + d.status;
+      startBtn.disabled = running;
+      stopBtn.disabled = !running;
+      Object.entries(d.stats || {}).forEach(([k, v]) => {
+        const el = secEl.querySelector(`.stat .n[data-k="${k}"]`);
+        if (el) el.textContent = v;
+      });
+      logsEl.textContent = (d.logs || []).join("\n");
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
+    async function poll() {
+      try {
+        const r = await fetch(urls.status + "?section=" + sectionName);
+        const d = await r.json();
+        if (d.ok) apply(d);
+      } catch (e) { /* jim */ }
+    }
+    poll();
+    setInterval(poll, 2000);
+  }
+
+  setupSection(document.querySelector('.section[data-sec="citizen"]'), "citizen", staticCitizen);
+  setupSection(document.querySelector('.section[data-sec="family"]'), "family", staticFamily);
+})();
+</script>
 {% endblock %}

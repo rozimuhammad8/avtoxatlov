@@ -119,6 +119,18 @@ def start_fill(request, pk):
     static = body.get("static") or {}
     if not streets:
         return JsonResponse({"ok": False, "error": "Ko'cha tanlang."}, status=400)
+
+    # "Noma'lum" (id 0) ko'cha faqat fuqaro bo'limida street_id biriktiradi —
+    # qaysi ko'chalarga navbat bilan taqsimlanishini FOYDALANUVCHI tanlaydi.
+    if section == "citizen":
+        for s in streets:
+            if str(s.get("id")) != "0":
+                continue
+            if not [t for t in (s.get("targets") or []) if t.get("id")]:
+                name = s.get("name") or "Noma'lum ko'cha"
+                return JsonResponse({"ok": False, "error": (
+                    f"«{name}» uchun taqsimlanadigan ko'chalarni tanlang."
+                )}, status=400)
     if not mahalla.token:
         return JsonResponse({"ok": False, "error": "online-mahalla token yo'q."}, status=400)
     if section == "family" and not mahalla.ihma_token:
